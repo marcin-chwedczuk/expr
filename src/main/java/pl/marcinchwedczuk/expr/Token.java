@@ -30,6 +30,6 @@ public class Token {
 
     @Override
     public String toString() {
-        return String.format("%s(%s)", type, text, position);
+        return String.format("%s[%s]", type, text);
     }
 }
