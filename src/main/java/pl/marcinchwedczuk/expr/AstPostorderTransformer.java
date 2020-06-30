@@ -2,7 +2,7 @@ package pl.marcinchwedczuk.expr;
 
 import java.util.List;
 
-public interface AstTransformer<R> {
+public interface AstPostorderTransformer<R> {
     R constant(double c);
     R variable(String variableName);
 

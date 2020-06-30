@@ -13,8 +13,16 @@ public class ParserTest {
         Parser p = new Parser(tokens);
         Ast expr = p.gExpr();
 
-        AstTransformer<String> toString = new PrintToStringTransformer();
-        String exprString = expr.postOrder(toString);
-        assertEquals(exprString, "");
+        String exprString = PrintToStringTransformer.transform(expr);
+        assertEquals("3*sin(x) + x^3/3", exprString);
+    }
+
+    @Test public void smoke_test2() {
+        List<Token> tokens =  Lexer.tokenize(Input.of("-2^-3^-4"));
+        Parser p = new Parser(tokens);
+        Ast expr = p.gExpr();
+
+        String exprString = PrintToStringTransformer.transform(expr);
+        assertEquals("-2^-3^-4", exprString);
     }
 }

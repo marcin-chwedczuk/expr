@@ -61,7 +61,7 @@ public class Parser {
     }
 
     private Ast gFactor() {
-        Ast left = gPower();
+        Ast left = gSignedFactor();
 
         while (isOneOf(lookahead0(),
                 TokenType.MULTIPLICATION_SIGN,
@@ -71,7 +71,7 @@ public class Parser {
             TokenType opType = lookahead0().type;
             consumeToken();
 
-            Ast right = gPower();
+            Ast right = gSignedFactor();
             left = Ast.newBinaryOperator(
                     toBinaryOperatorType(opType), left, right);
         }
@@ -79,13 +79,30 @@ public class Parser {
         return left;
     }
 
+    private Ast gSignedFactor() {
+        boolean negate = false;
+        while (isOneOf(lookahead0(), TokenType.PLUS, TokenType.MINUS)) {
+            if (lookahead0().type == TokenType.MINUS) {
+                negate = !negate;
+            }
+            consumeToken();
+        }
+
+        Ast tmp = gPower();
+        if (negate) {
+            tmp = Ast.newUnaryOperator(AstType.NEGATE, tmp);
+        }
+        return tmp;
+    }
+
     private Ast gPower() {
+        // NOTICE: -2^-3 == -(2^-3)
         List<Ast> values = new ArrayList<>();
-        values.add(gValue());
+        values.add(gUnsignedValue());
 
         while (isOneOf(lookahead0(), TokenType.EXPONENT)) {
             consumeToken();
-            values.add(gValue());
+            values.add(gSignedValue());
         }
 
         // Exp is right associative, so 1^2^3 is 1^(2^3)
@@ -99,7 +116,10 @@ public class Parser {
         return tmp;
     }
 
-    private Ast gValue() {
+    private Ast gSignedValue() { return gValue(true); }
+    private Ast gUnsignedValue() { return gValue(false); }
+
+    private Ast gValue(boolean signed) {
         if (isOneOf(lookahead0(), TokenType.LPAREN)) {
             consumeToken();
             Ast expr = gExpr();
@@ -136,18 +156,23 @@ public class Parser {
             }
         }
 
-        boolean negate = false;
-        while (isOneOf(lookahead0(), TokenType.PLUS, TokenType.MINUS)) {
-            if (lookahead0().type == TokenType.MINUS) {
-                negate = !negate;
+        if (signed) {
+            boolean negate = false;
+            while (isOneOf(lookahead0(), TokenType.PLUS, TokenType.MINUS)) {
+                if (lookahead0().type == TokenType.MINUS) {
+                    negate = !negate;
+                }
+                consumeToken();
             }
-            consumeToken();
+            Ast tmp = gUnsignedValue();
+            if (negate) {
+                tmp = Ast.newUnaryOperator(AstType.NEGATE, tmp);
+            }
+            return tmp;
         }
-        Ast tmp = gValue();
-        if (negate) {
-            tmp = Ast.newUnaryOperator(AstType.NEGATE, tmp);
-        }
-        return tmp;
+
+        throw new ParseErrorException(lookahead0().position,
+            "Expected a number, an identifier or '(' but found " + lookahead0().type);
     }
 
     private List<Ast> gArguments() {

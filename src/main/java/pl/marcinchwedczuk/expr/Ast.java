@@ -1,7 +1,6 @@
 package pl.marcinchwedczuk.expr;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static java.util.stream.Collectors.toList;
 
@@ -84,7 +83,7 @@ public class Ast {
         this.variableName = variableName;
     }
 
-    public <R> R postOrder(AstTransformer<R> transformer) {
+    public <R> R postOrder(AstPostorderTransformer<R> transformer) {
         return switch (type) {
             case NEGATE ->
                     transformer.unaryOperator(type, left.postOrder(transformer));
@@ -100,6 +99,44 @@ public class Ast {
                     arguments.stream()
                         .map(arg -> arg.postOrder(transformer))
                         .collect(toList()));
+        };
+    }
+
+    public <K,R> R twoPass(Ast2PassTransformer<K,R> transformer,
+                           K parentContext)
+    {
+        return switch (type) {
+            case NEGATE -> {
+                K context = transformer.unaryOperatorContext(type, parentContext);
+                R childResult = left.twoPass(transformer, context);
+
+                yield transformer.unaryOperator(type, childResult, parentContext);
+            }
+
+            case ADD, SUBTRACT, MULTIPLY, DIVIDE, MODULO, EXPONENTIATE -> {
+                K context = transformer.binaryOperatorContext(type, parentContext);
+                R leftResult = left.twoPass(transformer, context);
+                R rightResult = right.twoPass(transformer, context);
+
+                yield transformer.binaryOperator(type,
+                        leftResult, rightResult,
+                        parentContext);
+            }
+
+            case VARIABLE ->
+                transformer.variable(variableName, parentContext);
+
+            case CONSTANT ->
+                transformer.constant(constant, parentContext);
+
+            case FUNCTION_CALL -> {
+                K context = transformer.functionCallContext(functionName, parentContext);
+                var argumentsResults = arguments.stream()
+                        .map(arg -> arg.twoPass(transformer, context))
+                        .collect(toList());
+
+                yield transformer.functionCall(functionName, argumentsResults, parentContext);
+            }
         };
     }
 }
