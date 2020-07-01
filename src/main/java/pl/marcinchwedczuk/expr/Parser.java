@@ -4,11 +4,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Parser {
+    public static Ast parse(List<Token> tokens) {
+        var parser = new Parser(tokens);
+        return parser.parseExpression();
+    }
+
     private final List<Token> tokens;
     // Index of next not yet seen token
     private int curr = 0;
 
-    public Parser(List<Token> tokens) {
+    private Parser(List<Token> tokens) {
         this.tokens = tokens;
     }
 
@@ -41,7 +46,11 @@ public class Parser {
         consumeToken();
     }
 
-    public Ast gExpr() {
+    private Ast parseExpression() {
+        return gExpr();
+    }
+
+    private Ast gExpr() {
         return gTerm();
     }
 
@@ -61,7 +70,7 @@ public class Parser {
     }
 
     private Ast gFactor() {
-        Ast left = gSignedFactor();
+        Ast left = gSignedPower();
 
         while (isOneOf(lookahead0(),
                 TokenType.MULTIPLICATION_SIGN,
@@ -71,7 +80,7 @@ public class Parser {
             TokenType opType = lookahead0().type;
             consumeToken();
 
-            Ast right = gSignedFactor();
+            Ast right = gSignedPower();
             left = Ast.newBinaryOperator(
                     toBinaryOperatorType(opType), left, right);
         }
@@ -79,7 +88,8 @@ public class Parser {
         return left;
     }
 
-    private Ast gSignedFactor() {
+    private Ast gSignedPower() {
+        // NOTICE: -2^-3 == -(2^-3)
         boolean negate = false;
         while (isOneOf(lookahead0(), TokenType.PLUS, TokenType.MINUS)) {
             if (lookahead0().type == TokenType.MINUS) {
@@ -88,35 +98,22 @@ public class Parser {
             consumeToken();
         }
 
-        Ast tmp = gPower();
+        Ast tmp = gUnsignedValue();
+
+        if (isOneOf(lookahead0(), TokenType.EXPONENT)) {
+            consumeToken();
+
+            Ast exponentAst = gSignedPower();
+            tmp = Ast.newBinaryOperator(AstType.EXPONENTIATE, tmp, exponentAst);
+        }
+
         if (negate) {
             tmp = Ast.newUnaryOperator(AstType.NEGATE, tmp);
         }
-        return tmp;
-    }
-
-    private Ast gPower() {
-        // NOTICE: -2^-3 == -(2^-3)
-        List<Ast> values = new ArrayList<>();
-        values.add(gUnsignedValue());
-
-        while (isOneOf(lookahead0(), TokenType.EXPONENT)) {
-            consumeToken();
-            values.add(gSignedValue());
-        }
-
-        // Exp is right associative, so 1^2^3 is 1^(2^3)
-        Ast tmp = values.get(values.size()-1);
-        for (int i = values.size() - 2; i >= 0; i--) {
-            tmp = Ast.newBinaryOperator(
-                    AstType.EXPONENTIATE,
-                    values.get(i), tmp);
-        }
 
         return tmp;
     }
 
-    private Ast gSignedValue() { return gValue(true); }
     private Ast gUnsignedValue() { return gValue(false); }
 
     private Ast gValue(boolean signed) {
