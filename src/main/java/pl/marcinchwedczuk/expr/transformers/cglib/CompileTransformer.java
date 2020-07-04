@@ -6,6 +6,10 @@ import org.objectweb.asm.MethodVisitor;
 import pl.marcinchwedczuk.expr.Ast;
 import pl.marcinchwedczuk.expr.AstPostorderTransformer;
 import pl.marcinchwedczuk.expr.AstType;
+import pl.marcinchwedczuk.expr.transformers.common.EvaluableExpression;
+import pl.marcinchwedczuk.expr.transformers.common.Function;
+import pl.marcinchwedczuk.expr.transformers.common.Functions;
+import pl.marcinchwedczuk.expr.transformers.common.Variables;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -13,7 +17,6 @@ import java.nio.file.Paths;
 import java.util.List;
 
 import static org.objectweb.asm.Opcodes.*;
-import static pl.marcinchwedczuk.expr.AstType.NEGATE;
 
 // Based on: https://dzone.com/articles/fully-dynamic-classes-with-asm
 //
@@ -28,7 +31,7 @@ public class CompileTransformer implements AstPostorderTransformer<CompileTransf
     }
 
     private final ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
-    private String fullClassName = null;
+    private String javaClassName = null;
     private MethodVisitor evaluate = null;
     private Label evaluateStart = null;
     private Label evaluateEnd = null;
@@ -46,14 +49,15 @@ public class CompileTransformer implements AstPostorderTransformer<CompileTransf
     private void initialize() {
         String package0 = this.getClass().getPackageName();
         String className = "EvaluableExpression$" + System.currentTimeMillis();
-        this.fullClassName = package0 + "." + className;
+        this.javaClassName = package0 + "." + className;
 
         cw.visit(V1_8,
                 ACC_PUBLIC, // public class
-                this.fullClassName.replace('.', '/'),
+                bytecodeName(javaClassName),
                 null, // signature (null means not generic)
-                "java/lang/Object", // superclass
-                new String[]{ EvaluableExpression.class.getName().replace('.', '/') }); // interfaces
+                bytecodeName(Object.class), // superclass
+                // interfaces:
+                new String[] { bytecodeName(EvaluableExpression.class) });
 
         declarePublicEmptyConstructor();
         initializeEvaluateMethod();
@@ -73,7 +77,7 @@ public class CompileTransformer implements AstPostorderTransformer<CompileTransf
         DynamicClassLoader loader = new DynamicClassLoader();
 
         var clazz = (Class<EvaluableExpression>)
-                loader.defineClass(fullClassName, classBytes);
+                loader.defineClass(javaClassName, classBytes);
 
         return clazz;
     }
@@ -104,7 +108,7 @@ public class CompileTransformer implements AstPostorderTransformer<CompileTransf
         evaluate = cw.visitMethod(
                 ACC_PUBLIC, // public method
                 "evaluate", // name
-                "(Ljava/util/Map;Ljava/util/Map;)D", // descriptor
+                "(Lpl/marcinchwedczuk/expr/transformers/common/Variables;Lpl/marcinchwedczuk/expr/transformers/common/Functions;)D", // descriptor
                 null, // signature (null means not generic)
                 null); // exceptions (array of strings)
         evaluate.visitCode();
@@ -125,7 +129,7 @@ public class CompileTransformer implements AstPostorderTransformer<CompileTransf
         evaluate.visitLocalVariable("tmp", "D",
                 null, evaluateStart, evaluateEnd, VAR_TMP);
 
-        evaluate.visitLocalVariable("f", "Lpl/marcinchwedczuk/expr/transformers/cglib/Function;",
+        evaluate.visitLocalVariable("f", "Lpl/marcinchwedczuk/expr/transformers/common/Function;",
                 null, evaluateStart, evaluateEnd, VAR_FUNC);
 
         evaluate.visitMaxs(maxStack.maxStack, TOTAL_LOCALS_SLOTS);
@@ -143,11 +147,11 @@ public class CompileTransformer implements AstPostorderTransformer<CompileTransf
     public MaxStack variable(String variableName) {
         evaluate.visitVarInsn(ALOAD, ARG_VARIABLES);
         evaluate.visitLdcInsn(variableName);
-        evaluate.visitMethodInsn(INVOKEINTERFACE,
-            "java/util/Map", "get", "(Ljava/lang/Object;)Ljava/lang/Object;", true);
-        evaluate.visitTypeInsn(CHECKCAST, "java/lang/Double");
         evaluate.visitMethodInsn(INVOKEVIRTUAL,
-                "java/lang/Double", "doubleValue", "()D", false);
+            bytecodeName(Variables.class), "get", "(Ljava/lang/String;)D", false);
+        // evaluate.visitTypeInsn(CHECKCAST, "java/lang/Double");
+        // evaluate.visitMethodInsn(INVOKEVIRTUAL,
+          //       "java/lang/Double", "doubleValue", "()D", false);
         return MaxStack.of(2);
     }
 
@@ -205,9 +209,10 @@ public class CompileTransformer implements AstPostorderTransformer<CompileTransf
     public MaxStack functionCall(String functionName, List<MaxStack> arguments) {
         evaluate.visitVarInsn(ALOAD, ARG_FUNCTIONS);
         evaluate.visitLdcInsn(functionName);
-        evaluate.visitMethodInsn(INVOKEINTERFACE,
-                "java/util/Map", "get", "(Ljava/lang/Object;)Ljava/lang/Object;", true);
-        evaluate.visitTypeInsn(CHECKCAST, "pl/marcinchwedczuk/expr/transformers/cglib/Function");
+        evaluate.visitMethodInsn(INVOKEVIRTUAL,
+                bytecodeName(Functions.class), "get",
+                "(Ljava/lang/String;)Lpl/marcinchwedczuk/expr/transformers/common/Function;", false);
+        // evaluate.visitTypeInsn(CHECKCAST, "pl/marcinchwedczuk/expr/transformers/cglib/Function");
         evaluate.visitVarInsn(ASTORE, VAR_FUNC);
 
         // Create an array
@@ -228,12 +233,19 @@ public class CompileTransformer implements AstPostorderTransformer<CompileTransf
 
         evaluate.visitVarInsn(ALOAD, VAR_FUNC);
         evaluate.visitVarInsn(ALOAD, VAR_ARR);
-        evaluate.visitMethodInsn(INVOKEINTERFACE,
-                "pl/marcinchwedczuk/expr/transformers/cglib/Function",
-                "call",
-                "([D)D", true);
+        evaluate.visitMethodInsn(INVOKEVIRTUAL,
+                bytecodeName(Function.class),
+                "call", "([D)D", false);
 
         return MaxStack.of(3 + arguments.size());
+    }
+
+    private static String bytecodeName(Class<?> clazz) {
+        return bytecodeName(clazz.getName());
+    }
+
+    private static String bytecodeName(String className) {
+        return className.replace('.', '/');
     }
 
     public static class MaxStack {
