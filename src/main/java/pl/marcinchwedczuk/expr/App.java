@@ -3,8 +3,10 @@
  */
 package pl.marcinchwedczuk.expr;
 
+import pl.marcinchwedczuk.expr.transformers.cglib.CGLibDemo;
+
 public class App {
-    public static void main(String[] args) {
-        System.out.println("oki");
+    public static void main(String[] args) throws Exception {
+        CGLibDemo.main(args);
     }
 }
